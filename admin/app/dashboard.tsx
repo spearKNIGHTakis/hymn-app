@@ -128,6 +128,32 @@ function normalizeTwiText(value: string): string {
   return value.replace(/[41$]/g, (character) => LEGACY_TWI_CODES[character]);
 }
 
+function createUuid(): string {
+  const cryptoApi = globalThis.crypto;
+  if (cryptoApi && typeof cryptoApi.randomUUID === "function") {
+    return cryptoApi.randomUUID();
+  }
+  if (!cryptoApi || typeof cryptoApi.getRandomValues !== "function") {
+    throw new Error(
+      "Secure ID generation is unavailable. Open the dashboard over HTTPS and try again.",
+    );
+  }
+
+  const bytes = cryptoApi.getRandomValues(new Uint8Array(16));
+  bytes[6] = (bytes[6] & 0x0f) | 0x40;
+  bytes[8] = (bytes[8] & 0x3f) | 0x80;
+  const hex = Array.from(bytes, (byte) =>
+    byte.toString(16).padStart(2, "0"),
+  ).join("");
+  return [
+    hex.slice(0, 8),
+    hex.slice(8, 12),
+    hex.slice(12, 16),
+    hex.slice(16, 20),
+    hex.slice(20),
+  ].join("-");
+}
+
 function normalizeTwiDraft(draft: HymnDraft): HymnDraft {
   return {
     ...draft,
@@ -621,7 +647,7 @@ export default function CatalogueDashboard() {
     const sourceText = source?.extracted_text ?? "";
     const firstLine = sourceText.split(/\r?\n/).find((line) => line.trim()) ?? "";
     const filename = source?.original_filename.replace(/\.pdf$/i, "") ?? "";
-    const id = `${source?.original_filename ?? ""}-${crypto.randomUUID().slice(0, 8)}`
+    const id = `${source?.original_filename ?? ""}-${createUuid().slice(0, 8)}`
       .toLowerCase()
       .replace(/[^a-z0-9-]+/g, "-")
       .replace(/^-|-$/g, "");
@@ -716,8 +742,8 @@ export default function CatalogueDashboard() {
     setNotice("");
     const safeHymnId = hymnId.replace(/[^a-zA-Z0-9_-]/g, "_");
     const safeFilename = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-    const storagePath = `${session.user.id}/${safeHymnId}/${crypto.randomUUID()}-${safeFilename}`;
     try {
+      const storagePath = `${session.user.id}/${safeHymnId}/${createUuid()}-${safeFilename}`;
       const { error: uploadError } = await supabase.storage
         .from("hymn-audio")
         .upload(storagePath, file, {
@@ -731,7 +757,7 @@ export default function CatalogueDashboard() {
         .from("hymn-audio")
         .getPublicUrl(storagePath);
       const recording: Recording = {
-        id: crypto.randomUUID(),
+        id: createUuid(),
         type: recordingType,
         url: data.publicUrl,
         fileSizeBytes: file.size,
@@ -1034,7 +1060,7 @@ export default function CatalogueDashboard() {
       let storagePath = "";
       try {
         const { text, pageCount } = await extractPdfText(file);
-        storagePath = `${session.user.id}/${crypto.randomUUID()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+        storagePath = `${session.user.id}/${createUuid()}-${file.name.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
         const { error: uploadError } = await supabase.storage
           .from("source-pdfs")
           .upload(storagePath, file, {
