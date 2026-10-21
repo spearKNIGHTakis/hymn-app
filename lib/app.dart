@@ -8,14 +8,15 @@ import 'theme/app_theme.dart';
 import 'screens/app_shell.dart';
 
 class PcgHymnsApp extends StatefulWidget {
-  const PcgHymnsApp({super.key});
+  const PcgHymnsApp({super.key, this.repository = const HymnRepository()});
+
+  final HymnRepository repository;
 
   @override
   State<PcgHymnsApp> createState() => _PcgHymnsAppState();
 }
 
 class _PcgHymnsAppState extends State<PcgHymnsApp> {
-  final _repository = const HymnRepository();
   final _audio = HymnAudioService();
 
   @override
@@ -27,7 +28,7 @@ class _PcgHymnsAppState extends State<PcgHymnsApp> {
   @override
   Widget build(BuildContext context) => MultiProvider(
         providers: [
-          Provider.value(value: _repository),
+          Provider.value(value: widget.repository),
           Provider.value(value: _audio),
         ],
         child: Consumer<UserStore>(

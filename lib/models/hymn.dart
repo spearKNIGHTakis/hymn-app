@@ -42,7 +42,7 @@ class HymnRecording {
     if (type.isEmpty) {
       throw FormatException('Invalid recording type: $typeName');
     }
-    final url = json['url'] as String?;
+    final url = _optionalString(json, 'url');
     if (url != null && url.isNotEmpty) {
       final uri = Uri.tryParse(url);
       if (uri == null || uri.scheme != 'https' || uri.host.isEmpty) {
@@ -55,8 +55,8 @@ class HymnRecording {
       url: url,
       durationSeconds: _optionalInt(json, 'durationSeconds'),
       fileSizeBytes: _optionalInt(json, 'fileSizeBytes'),
-      attribution: json['attribution'] as String?,
-      permission: json['permission'] as String?,
+      attribution: _optionalString(json, 'attribution'),
+      permission: _optionalString(json, 'permission'),
     );
   }
 
@@ -126,14 +126,14 @@ class Hymn {
       title: _requiredString(json, 'title'),
       language: language.first,
       stanzas: rawStanzas.cast<String>(),
-      chorus: json['chorus'] as String?,
-      author: json['author'] as String?,
-      composer: json['composer'] as String?,
-      source: json['source'] as String?,
-      copyright: json['copyright'] as String?,
-      attribution: json['attribution'] as String?,
-      permission: json['permission'] as String?,
-      artwork: json['artwork'] as String?,
+      chorus: _optionalString(json, 'chorus'),
+      author: _optionalString(json, 'author'),
+      composer: _optionalString(json, 'composer'),
+      source: _optionalString(json, 'source'),
+      copyright: _optionalString(json, 'copyright'),
+      attribution: _optionalString(json, 'attribution'),
+      permission: _optionalString(json, 'permission'),
+      artwork: _optionalString(json, 'artwork'),
       recordings: rawRecordings
           .cast<Map<String, dynamic>>()
           .map(HymnRecording.fromJson)
@@ -149,6 +149,15 @@ String _requiredString(Map<String, dynamic> json, String key) {
   final value = json[key];
   if (value is! String || value.trim().isEmpty) {
     throw FormatException('Missing required field: $key');
+  }
+  return value;
+}
+
+String? _optionalString(Map<String, dynamic> json, String key) {
+  final value = json[key];
+  if (value == null) return null;
+  if (value is! String) {
+    throw FormatException('$key must be a string');
   }
   return value;
 }

@@ -21,14 +21,15 @@ class AppShell extends StatefulWidget {
 }
 
 class _AppShellState extends State<AppShell> {
-  late final Future<List<Hymn>> _catalogue;
+  late final Future<CatalogueLoadResult> _catalogue;
   int _tab = 0;
   HymnLanguage? _languageFilter;
+  bool _dismissSyncMessage = false;
 
   @override
   void initState() {
     super.initState();
-    _catalogue = context.read<HymnRepository>().loadBundled();
+    _catalogue = context.read<HymnRepository>().load();
     _languageFilter = context.read<UserStore>().defaultLanguage == 'twi'
         ? HymnLanguage.twi
         : HymnLanguage.english;
@@ -40,10 +41,12 @@ class _AppShellState extends State<AppShell> {
   }
 
   @override
-  Widget build(BuildContext context) => FutureBuilder<List<Hymn>>(
+  Widget build(BuildContext context) => FutureBuilder<CatalogueLoadResult>(
         future: _catalogue,
         builder: (context, snapshot) {
-          final hymns = snapshot.data ?? const <Hymn>[];
+          final result = snapshot.data;
+          final hymns = result?.hymns ?? const <Hymn>[];
+          final syncMessage = result?.syncMessage;
           final pages = [
             HomeScreen(
               hymns: hymns,
@@ -84,6 +87,20 @@ class _AppShellState extends State<AppShell> {
                     ? const Center(child: CircularProgressIndicator())
                     : Column(
                         children: [
+                          if (!_dismissSyncMessage && syncMessage != null)
+                            MaterialBanner(
+                              content: Text(syncMessage),
+                              leading: const Icon(Icons.cloud_off_outlined),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => setState(
+                                      () => _dismissSyncMessage = true),
+                                  child: const Text('Dismiss'),
+                                ),
+                              ],
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 16, vertical: 8),
+                            ),
                           Expanded(
                               child:
                                   IndexedStack(index: _tab, children: pages)),

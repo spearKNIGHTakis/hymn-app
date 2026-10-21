@@ -95,4 +95,14 @@ void main() {
       throwsFormatException,
     );
   });
+
+  test('rejects malformed optional metadata instead of crashing later', () {
+    expect(
+      () => Hymn.fromJson({
+        ..._hymn(id: 'bad-metadata', number: '1', title: 'Bad metadata'),
+        'author': 42,
+      }),
+      throwsFormatException,
+    );
+  });
 }

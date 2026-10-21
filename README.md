@@ -20,4 +20,10 @@ The debug APK is produced at `build/app/outputs/flutter-apk/app-debug.apk` when 
 
 See [CONTENT_GUIDE.md](CONTENT_GUIDE.md) for the JSON schema, exact steps to add verified English/Twi entries and male solo, female solo, choir, congregation, or instrumental audio, and publishing/permission notes. Update `assets/catalogue.json`; do not edit the UI for new content.
 
-The app stores favourites, preferences, and singing history on-device. Audio can stream from a direct HTTPS URL or be downloaded individually for app-private offline playback. No account, analytics, advertising, or remote catalogue update service is configured in this initial build.
+## Admin and online catalogue
+
+The Next.js admin lives in [`admin/`](admin/). It supports batch PDF source uploads, text extraction for human review, draft editing, and publishing to Supabase. See [`supabase/README.md`](supabase/README.md) to create a project, apply the database/storage policies, provision an admin, and configure both clients. The Flutter app continues to work offline using its bundled catalogue and the last valid published copy.
+
+The Android launcher icon is an original open hymnbook and music note design. Its SVG source is [`assets/brand/app_icon.svg`](assets/brand/app_icon.svg); Android density and adaptive icon assets are generated from that source.
+
+The app stores favourites, preferences, and singing history on-device. Audio can stream from a direct HTTPS URL or be downloaded individually for app-private offline playback. No analytics or advertising are configured.
