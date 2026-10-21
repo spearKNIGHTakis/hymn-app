@@ -697,7 +697,7 @@ export default function CatalogueDashboard() {
       flac: "audio/flac",
     };
     const contentType = audioTypes[extension];
-    if (!contentType || (file.type && !file.type.startsWith("audio/"))) {
+    if (!contentType) {
       setError("Choose an MP3, M4A, AAC, WAV, OGG or FLAC audio file.");
       return;
     }
