@@ -168,6 +168,12 @@ tbody tr:hover { background: #fcfdfa; }
 .modal-header h2 { font-size: 18px; letter-spacing: -.4px; margin: 0; }
 .close-button { background: transparent; border: 0; color: #838a82; font-size: 24px; line-height: 1; padding: 0 2px; }
 .form-body { padding: 20px 24px; }
+.audio-upload-modal { max-width: 440px; }
+.audio-upload-body { display: flex; flex-direction: column; gap: 13px; }
+.audio-upload-body label { color: #505850; display: flex; flex-direction: column; font-size: 10px; font-weight: 600; gap: 6px; }
+.audio-upload-body select { background: #fff; border: 1px solid #e2e5df; border-radius: 5px; color: #313831; font-size: 11px; min-height: 35px; padding: 0 10px; }
+.audio-upload-body p { margin: 0; }
+.audio-upload-body .alert { margin: 0; }
 .editor-pdf-guidance { border: 1px solid #e9ede7; border-radius: 5px; margin-bottom: 16px; }
 .form-grid { display: grid; gap: 15px 14px; grid-template-columns: 1fr 1fr; }
 .form-grid label { color: #505850; display: flex; flex-direction: column; font-size: 10px; font-weight: 600; gap: 6px; }

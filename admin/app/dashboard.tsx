@@ -438,9 +438,11 @@ export default function CatalogueDashboard() {
   const [uploadingPdfs, setUploadingPdfs] = useState(false);
   const [uploadingAudio, setUploadingAudio] = useState(false);
   const [recordingType, setRecordingType] = useState(RECORDING_TYPES[0]);
+  const [audioUploadTarget, setAudioUploadTarget] = useState<Hymn | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const pdfInput = useRef<HTMLInputElement>(null);
   const audioInput = useRef<HTMLInputElement>(null);
+  const directAudioInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!supabase) return;
@@ -633,6 +635,14 @@ export default function CatalogueDashboard() {
     setMenuId(null);
   }
 
+  function openAudioUpload(hymn: Hymn) {
+    setError("");
+    setNotice("");
+    setRecordingType(RECORDING_TYPES[0]);
+    setAudioUploadTarget(hymn);
+    setMenuId(null);
+  }
+
   function closeEditor() {
     if (uploadingAudio) {
       setError("Wait for the audio upload to finish before closing this hymn.");
@@ -659,10 +669,13 @@ export default function CatalogueDashboard() {
     });
   }
 
-  async function uploadRecording(event: ChangeEvent<HTMLInputElement>) {
+  async function uploadRecording(
+    event: ChangeEvent<HTMLInputElement>,
+    targetHymn: Hymn | null = null,
+  ) {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (!file || !draft) return;
+    if (!file || (!draft && !targetHymn)) return;
     if (!supabase || !session || !isAdmin) {
       setError("Sign in as an admin to upload hymn recordings.");
       return;
@@ -686,7 +699,7 @@ export default function CatalogueDashboard() {
       setError("Audio files must be 100 MB or smaller.");
       return;
     }
-    const hymnId = draft.id.trim();
+    const hymnId = (targetHymn?.id ?? draft?.id ?? "").trim();
     if (!hymnId) {
       setError("Enter the hymn's stable ID before uploading its recording.");
       return;
@@ -717,12 +730,30 @@ export default function CatalogueDashboard() {
         url: data.publicUrl,
         fileSizeBytes: file.size,
       };
-      setDraft((current) =>
-        current
-          ? { ...current, recordings: [...current.recordings, recording] }
-          : current,
-      );
-      setNotice(`${file.name} uploaded and added to this hymn.`);
+      if (targetHymn) {
+        updateCatalogue((current) => ({
+          ...current,
+          hymns: current.hymns.map((hymn) =>
+            hymn.id === targetHymn.id
+              ? {
+                  ...hymn,
+                  recordings: [...(hymn.recordings ?? []), recording],
+                }
+              : hymn,
+          ),
+        }));
+        setAudioUploadTarget(null);
+        setNotice(
+          `${file.name} uploaded and added to ${targetHymn.title}. Save the catalogue draft to sync it to Supabase.`,
+        );
+      } else {
+        setDraft((current) =>
+          current
+            ? { ...current, recordings: [...current.recordings, recording] }
+            : current,
+        );
+        setNotice(`${file.name} uploaded and added to this hymn.`);
+      }
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Audio upload failed.",
@@ -1313,6 +1344,14 @@ export default function CatalogueDashboard() {
                       <td><span className="recording-cell"><Icon name="music" size={15} /> {hymn.recordings?.length ?? 0}</span></td>
                       <td><span className={`permission-status ${hymn.permission ? "complete" : "missing"}`}><span />{hymn.permission ? "Permission noted" : "Needs review"}</span></td>
                       <td className="actions-cell">
+                        <button
+                          className="icon-button"
+                          aria-label={`Upload audio for ${hymn.title}`}
+                          disabled={!supabase || !session || !isAdmin || uploadingAudio}
+                          onClick={() => openAudioUpload(hymn)}
+                        >
+                          Upload audio
+                        </button>
                         <button className="icon-button" aria-label={`Edit ${hymn.title}`} onClick={() => openEditHymn(hymn)}>Edit</button>
                         <div className="menu-wrap">
                           <button className="icon-button more-button" aria-label={`More actions for ${hymn.title}`} onClick={() => setMenuId(menuId === hymn.id ? null : hymn.id)}><Icon name="more" /></button>
@@ -1344,6 +1383,89 @@ export default function CatalogueDashboard() {
           </div>
         </div>
       </main>
+
+      {audioUploadTarget && (
+        <div
+          className="modal-backdrop"
+          onMouseDown={(event) => {
+            if (
+              event.target === event.currentTarget &&
+              !uploadingAudio
+            ) {
+              setAudioUploadTarget(null);
+              setError("");
+            }
+          }}
+        >
+          <section
+            className="editor-modal audio-upload-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="audio-upload-title"
+          >
+            <header className="modal-header">
+              <div>
+                <div className="eyebrow">ADD RECORDING</div>
+                <h2 id="audio-upload-title">{audioUploadTarget.title}</h2>
+              </div>
+              <button
+                className="close-button"
+                aria-label="Close audio uploader"
+                disabled={uploadingAudio}
+                onClick={() => {
+                  setAudioUploadTarget(null);
+                  setError("");
+                }}
+              >
+                ×
+              </button>
+            </header>
+            <div className="form-body audio-upload-body">
+              <label>
+                Recording style
+                <select
+                  value={recordingType}
+                  disabled={uploadingAudio}
+                  onChange={(event) => setRecordingType(event.target.value)}
+                >
+                  {RECORDING_TYPES.map((type) => (
+                    <option value={type} key={type}>
+                      {RECORDING_TYPE_LABELS[type]}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <input
+                ref={directAudioInput}
+                className="recording-file-input"
+                type="file"
+                accept=".mp3,.m4a,.mp4,.aac,.wav,.ogg,.flac,audio/*"
+                onChange={(event) =>
+                  void uploadRecording(event, audioUploadTarget)
+                }
+                aria-label={`Choose audio for ${audioUploadTarget.title}`}
+              />
+              <p className="field-hint">
+                MP3, M4A, AAC, WAV, OGG and FLAC files up to 100 MB are
+                supported.
+              </p>
+              {error && (
+                <div className="alert error-alert" role="alert">
+                  {error}
+                </div>
+              )}
+              <button
+                className="button primary"
+                disabled={uploadingAudio || !supabase || !session || !isAdmin}
+                onClick={() => directAudioInput.current?.click()}
+              >
+                <Icon name="upload" size={16} />
+                {uploadingAudio ? "Uploading audio…" : "Choose audio file"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
 
       {draft && (
         <div className="modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) closeEditor(); }}>
