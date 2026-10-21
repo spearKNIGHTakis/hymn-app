@@ -15,8 +15,14 @@ const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const supabasePublishableKey =
   process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ??
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+const supabaseIsConfigured = Boolean(
+  supabaseUrl &&
+    supabasePublishableKey &&
+    !supabaseUrl.includes("your-project-ref") &&
+    !supabasePublishableKey.includes("your-project-publishable-key"),
+);
 const supabase: SupabaseClient | null =
-  supabaseUrl && supabasePublishableKey
+  supabaseIsConfigured && supabaseUrl && supabasePublishableKey
     ? createClient(supabaseUrl, supabasePublishableKey)
     : null;
 
@@ -1205,7 +1211,7 @@ export default function CatalogueDashboard() {
 
           {!supabase && (
             <div className="alert setup-alert" role="status">
-              Supabase is not configured yet. You can edit a local draft, but sign-in, cloud publishing, and private PDF storage will be enabled after project setup.
+              Supabase is not configured with project credentials. Replace the example URL and publishable key in admin/.env.local, then restart the admin app. You can edit a local draft in the meantime.
             </div>
           )}
           {supabase && isAdmin && (
