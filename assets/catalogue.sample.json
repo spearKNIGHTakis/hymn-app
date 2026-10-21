@@ -1,0 +1,22 @@
+{
+  "schemaVersion": 1,
+  "catalogueVersion": "sample-only-not-for-release",
+  "hymns": [
+    {
+      "id": "sample-english-not-a-hymn",
+      "number": "SAMPLE-E",
+      "title": "Sample English entry - not an official hymn",
+      "language": "english",
+      "stanzas": [],
+      "recordings": []
+    },
+    {
+      "id": "sample-twi-not-a-hymn",
+      "number": "SAMPLE-T",
+      "title": "Sample Twi entry - not an official hymn",
+      "language": "twi",
+      "stanzas": [],
+      "recordings": []
+    }
+  ]
+}
