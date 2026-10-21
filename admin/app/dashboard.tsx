@@ -675,6 +675,31 @@ export default function CatalogueDashboard() {
     setMenuId(null);
   }
 
+  function requestAudioFile(input: HTMLInputElement | null) {
+    setError("");
+    if (!supabase) {
+      setError("Configure Supabase before uploading hymn recordings.");
+      return;
+    }
+    if (!authReady) {
+      setError("Wait for the sign-in check to finish, then try again.");
+      return;
+    }
+    if (!session) {
+      setError("Sign in with an invited admin account to upload audio.");
+      return;
+    }
+    if (isAdmin !== true) {
+      setError("This account is not authorized to upload hymn recordings.");
+      return;
+    }
+    if (!input) {
+      setError("The audio file picker is unavailable. Refresh the page and try again.");
+      return;
+    }
+    input.click();
+  }
+
   function closeEditor() {
     if (uploadingAudio) {
       setError("Wait for the audio upload to finish before closing this hymn.");
@@ -707,7 +732,15 @@ export default function CatalogueDashboard() {
   ) {
     const file = event.target.files?.[0];
     event.target.value = "";
-    if (!file || (!draft && !targetHymn)) return;
+    setError("");
+    if (!file) {
+      setError("No audio file was selected. Choose an audio file and try again.");
+      return;
+    }
+    if (!draft && !targetHymn) {
+      setError("Open a hymn draft before adding an audio recording.");
+      return;
+    }
     if (!supabase || !session || !isAdmin) {
       setError("Sign in as an admin to upload hymn recordings.");
       return;
@@ -1469,7 +1502,7 @@ export default function CatalogueDashboard() {
               </label>
               <input
                 ref={directAudioInput}
-                className="recording-file-input"
+                className="visually-hidden"
                 type="file"
                 accept=".mp3,.m4a,.mp4,.aac,.wav,.ogg,.flac,audio/*"
                 onChange={(event) =>
@@ -1481,6 +1514,29 @@ export default function CatalogueDashboard() {
                 MP3, M4A, AAC, WAV, OGG and FLAC files up to 100 MB are
                 supported.
               </p>
+              {!supabase && (
+                <small className="field-hint">
+                  Configure the Supabase URL and publishable key in
+                  admin/.env.local, then restart the dashboard.
+                </small>
+              )}
+              {supabase && !authReady && (
+                <small className="field-hint">Checking sign-in status…</small>
+              )}
+              {supabase && authReady && !session && (
+                <small className="field-hint">
+                  Sign in with an invited admin account to upload audio.
+                </small>
+              )}
+              {session && isAdmin === null && (
+                <small className="field-hint">Checking admin access…</small>
+              )}
+              {session && isAdmin === false && (
+                <small className="field-hint">
+                  This account is not authorized to upload audio. Add it to
+                  Supabase&apos;s admin_users table.
+                </small>
+              )}
               {error && (
                 <div className="alert error-alert" role="alert">
                   {error}
@@ -1488,8 +1544,8 @@ export default function CatalogueDashboard() {
               )}
               <button
                 className="button primary"
-                disabled={uploadingAudio || !supabase || !session || !isAdmin}
-                onClick={() => directAudioInput.current?.click()}
+                disabled={uploadingAudio}
+                onClick={() => requestAudioFile(directAudioInput.current)}
               >
                 <Icon name="upload" size={16} />
                 {uploadingAudio ? "Uploading audio…" : "Choose audio file"}
@@ -1552,7 +1608,7 @@ export default function CatalogueDashboard() {
                     </div>
                     <input
                       ref={audioInput}
-                      className="recording-file-input"
+                      className="visually-hidden"
                       type="file"
                       accept=".mp3,.m4a,.mp4,.aac,.wav,.ogg,.flac,audio/*"
                       onChange={(event) => void uploadRecording(event)}
@@ -1561,14 +1617,17 @@ export default function CatalogueDashboard() {
                     <button
                       className="button secondary"
                       type="button"
-                      disabled={uploadingAudio || !supabase || !session || !isAdmin}
-                      onClick={() => audioInput.current?.click()}
+                      disabled={uploadingAudio}
+                      onClick={() => requestAudioFile(audioInput.current)}
                     >
                       <Icon name="upload" size={16} />
                       {uploadingAudio ? "Uploading audio…" : "Upload audio"}
                     </button>
                     {!supabase && <small className="field-hint">Configure Supabase to upload audio files.</small>}
-                    {supabase && !isAdmin && <small className="field-hint">Sign in as an admin to upload audio files.</small>}
+                    {supabase && !authReady && <small className="field-hint">Checking sign-in status…</small>}
+                    {supabase && authReady && !session && <small className="field-hint">Sign in with an invited admin account to upload audio files.</small>}
+                    {session && isAdmin === null && <small className="field-hint">Checking admin access…</small>}
+                    {session && isAdmin === false && <small className="field-hint">This account is not authorized to upload audio. Add it to Supabase&apos;s admin_users table.</small>}
                     {draft.recordings.length > 0 ? (
                       <div className="recording-upload-list">
                         {draft.recordings.map((recording) => (
