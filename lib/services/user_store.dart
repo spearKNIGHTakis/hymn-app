@@ -3,6 +3,15 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+enum LyricFontStyle {
+  sans('sans-serif'),
+  serif('serif');
+
+  const LyricFontStyle(this.fontFamily);
+
+  final String fontFamily;
+}
+
 class SingingEvent {
   const SingingEvent({required this.hymnId, required this.at});
   final String hymnId;
@@ -29,6 +38,10 @@ class UserStore extends ChangeNotifier {
         _ => ThemeMode.system,
       };
   double get lyricScale => _preferences.getDouble('lyricScale') ?? 1.0;
+  LyricFontStyle get lyricFontStyle =>
+      _preferences.getString('lyricFontStyle') == 'serif'
+          ? LyricFontStyle.serif
+          : LyricFontStyle.sans;
   String get defaultLanguage =>
       _preferences.getString('defaultLanguage') ?? 'english';
   bool get wifiOnly => _preferences.getBool('wifiOnly') ?? false;
@@ -89,7 +102,12 @@ class UserStore extends ChangeNotifier {
   }
 
   Future<void> setLyricScale(double value) async {
-    await _preferences.setDouble('lyricScale', value);
+    await _preferences.setDouble('lyricScale', value.clamp(0.8, 1.5));
+    notifyListeners();
+  }
+
+  Future<void> setLyricFontStyle(LyricFontStyle value) async {
+    await _preferences.setString('lyricFontStyle', value.name);
     notifyListeners();
   }
 

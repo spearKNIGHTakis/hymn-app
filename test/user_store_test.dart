@@ -19,4 +19,17 @@ void main() {
     await store.undoSingingEvent(store.singingEvents.single);
     expect(store.singingEvents, isEmpty);
   });
+
+  test('persists lyric size and font style within supported limits', () async {
+    final preferences = await SharedPreferences.getInstance();
+    final store = UserStore(preferences);
+
+    await store.setLyricScale(1.2);
+    await store.setLyricFontStyle(LyricFontStyle.serif);
+
+    expect(store.lyricScale, 1.2);
+    expect(store.lyricFontStyle, LyricFontStyle.serif);
+    await store.setLyricScale(2);
+    expect(store.lyricScale, 1.5);
+  });
 }

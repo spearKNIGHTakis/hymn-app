@@ -55,8 +55,36 @@ type Catalogue = {
 
 type HymnDraft = Omit<Hymn, "stanzas" | "recordings"> & {
   stanzasText: string;
-  recordingsText: string;
+  recordings: Recording[];
 };
+type HymnDraftTextField = Exclude<keyof HymnDraft, "recordings">;
+type TwiTextField = Extract<
+  HymnDraftTextField,
+  | "title"
+  | "author"
+  | "composer"
+  | "source"
+  | "copyright"
+  | "attribution"
+  | "permission"
+  | "chorus"
+  | "stanzasText"
+>;
+const TWI_TEXT_FIELDS: readonly string[] = [
+  "title",
+  "author",
+  "composer",
+  "source",
+  "copyright",
+  "attribution",
+  "permission",
+  "chorus",
+  "stanzasText",
+];
+
+function isTwiTextField(field: HymnDraftTextField): field is TwiTextField {
+  return TWI_TEXT_FIELDS.includes(field);
+}
 
 type PdfImport = {
   id: string;
@@ -77,6 +105,54 @@ const RECORDING_TYPES = [
   "congregation",
   "instrumental",
 ];
+const RECORDING_TYPE_LABELS: Record<string, string> = {
+  maleSolo: "Male solo",
+  femaleSolo: "Female solo",
+  choir: "Choir",
+  congregation: "Congregation",
+  instrumental: "Instrumental",
+};
+const LEGACY_TWI_CODES: Record<string, string> = {
+  "4": "ɔ",
+  "1": "ɛ",
+  $: "Ɔ",
+};
+
+function normalizeTwiText(value: string): string {
+  return value.replace(/[41$]/g, (character) => LEGACY_TWI_CODES[character]);
+}
+
+function normalizeTwiDraft(draft: HymnDraft): HymnDraft {
+  return {
+    ...draft,
+    language: "twi",
+    title: normalizeTwiText(draft.title),
+    author: draft.author ? normalizeTwiText(draft.author) : undefined,
+    composer: draft.composer ? normalizeTwiText(draft.composer) : undefined,
+    source: draft.source ? normalizeTwiText(draft.source) : undefined,
+    copyright: draft.copyright
+      ? normalizeTwiText(draft.copyright)
+      : undefined,
+    attribution: draft.attribution
+      ? normalizeTwiText(draft.attribution)
+      : undefined,
+    permission: draft.permission
+      ? normalizeTwiText(draft.permission)
+      : undefined,
+    chorus: draft.chorus ? normalizeTwiText(draft.chorus) : undefined,
+    stanzasText: normalizeTwiText(draft.stanzasText),
+  };
+}
+
+function draftForHymn(hymn: Hymn): HymnDraft {
+  const { stanzas, recordings = [], ...fields } = hymn;
+  const draft: HymnDraft = {
+    ...fields,
+    stanzasText: stanzas.join("\n\n"),
+    recordings,
+  };
+  return draft.language === "twi" ? normalizeTwiDraft(draft) : draft;
+}
 
 function getCatalogueSnapshot() {
   return typeof window === "undefined"
@@ -286,16 +362,7 @@ function emptyDraft(): HymnDraft {
     title: "",
     language: "english",
     stanzasText: "",
-    recordingsText: "[]",
-  };
-}
-
-function toDraft(hymn: Hymn): HymnDraft {
-  const { stanzas, recordings = [], ...fields } = hymn;
-  return {
-    ...fields,
-    stanzasText: stanzas.join("\n\n"),
-    recordingsText: JSON.stringify(recordings, null, 2),
+    recordings: [],
   };
 }
 
@@ -369,8 +436,11 @@ export default function CatalogueDashboard() {
   const [cloudChannel, setCloudChannel] = useState<"local" | "draft" | "published">("local");
   const [pdfImports, setPdfImports] = useState<PdfImport[]>([]);
   const [uploadingPdfs, setUploadingPdfs] = useState(false);
+  const [uploadingAudio, setUploadingAudio] = useState(false);
+  const [recordingType, setRecordingType] = useState(RECORDING_TYPES[0]);
   const fileInput = useRef<HTMLInputElement>(null);
   const pdfInput = useRef<HTMLInputElement>(null);
+  const audioInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     if (!supabase) return;
@@ -559,19 +629,119 @@ export default function CatalogueDashboard() {
   function openEditHymn(hymn: Hymn) {
     setError("");
     setEditingId(hymn.id);
-    setDraft(toDraft(hymn));
+    setDraft(draftForHymn(hymn));
     setMenuId(null);
   }
 
   function closeEditor() {
+    if (uploadingAudio) {
+      setError("Wait for the audio upload to finish before closing this hymn.");
+      return;
+    }
     setDraft(null);
     setEditingId(null);
     setError("");
   }
 
-  function updateDraft(field: keyof HymnDraft, value: string) {
+  function updateDraft(field: HymnDraftTextField, value: string) {
+    setDraft((current) => {
+      if (!current) return current;
+      if (field === "language") {
+        if (value === "english") return { ...current, language: "english" };
+        if (value !== "twi") return current;
+        return normalizeTwiDraft(current);
+      }
+      const normalizedValue =
+        current.language === "twi" && isTwiTextField(field)
+          ? normalizeTwiText(value)
+          : value;
+      return { ...current, [field]: normalizedValue };
+    });
+  }
+
+  async function uploadRecording(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (!file || !draft) return;
+    if (!supabase || !session || !isAdmin) {
+      setError("Sign in as an admin to upload hymn recordings.");
+      return;
+    }
+    const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
+    const audioTypes: Record<string, string> = {
+      mp3: "audio/mpeg",
+      m4a: "audio/mp4",
+      mp4: "audio/mp4",
+      aac: "audio/aac",
+      wav: "audio/wav",
+      ogg: "audio/ogg",
+      flac: "audio/flac",
+    };
+    const contentType = audioTypes[extension];
+    if (!contentType || (file.type && !file.type.startsWith("audio/"))) {
+      setError("Choose an MP3, M4A, AAC, WAV, OGG or FLAC audio file.");
+      return;
+    }
+    if (file.size > 100 * 1024 * 1024) {
+      setError("Audio files must be 100 MB or smaller.");
+      return;
+    }
+    const hymnId = draft.id.trim();
+    if (!hymnId) {
+      setError("Enter the hymn's stable ID before uploading its recording.");
+      return;
+    }
+
+    setUploadingAudio(true);
+    setError("");
+    setNotice("");
+    const safeHymnId = hymnId.replace(/[^a-zA-Z0-9_-]/g, "_");
+    const safeFilename = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    const storagePath = `${session.user.id}/${safeHymnId}/${crypto.randomUUID()}-${safeFilename}`;
+    try {
+      const { error: uploadError } = await supabase.storage
+        .from("hymn-audio")
+        .upload(storagePath, file, {
+          contentType,
+          upsert: false,
+        });
+      if (uploadError) {
+        throw new Error(`Audio upload failed: ${uploadError.message}`);
+      }
+      const { data } = supabase.storage
+        .from("hymn-audio")
+        .getPublicUrl(storagePath);
+      const recording: Recording = {
+        id: crypto.randomUUID(),
+        type: recordingType,
+        url: data.publicUrl,
+        fileSizeBytes: file.size,
+      };
+      setDraft((current) =>
+        current
+          ? { ...current, recordings: [...current.recordings, recording] }
+          : current,
+      );
+      setNotice(`${file.name} uploaded and added to this hymn.`);
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Audio upload failed.",
+      );
+    } finally {
+      setUploadingAudio(false);
+    }
+  }
+
+  function removeRecording(recordingId: string) {
     setDraft((current) =>
-      current ? { ...current, [field]: value } : current,
+      current
+        ? {
+            ...current,
+            recordings: current.recordings.filter(
+              (recording) => recording.id !== recordingId,
+            ),
+          }
+        : current,
     );
   }
 
@@ -579,8 +749,14 @@ export default function CatalogueDashboard() {
     event.preventDefault();
     if (!draft) return;
     setError("");
+    if (uploadingAudio) {
+      setError("Wait for the audio upload to finish before saving this hymn.");
+      return;
+    }
+    const normalizedDraft =
+      draft.language === "twi" ? normalizeTwiDraft(draft) : draft;
 
-    const id = draft.id.trim();
+    const id = normalizedDraft.id.trim();
     if (!id) {
       setError("Add a stable ID before saving.");
       return;
@@ -594,44 +770,16 @@ export default function CatalogueDashboard() {
       return;
     }
 
-    let recordings: Recording[];
-    try {
-      const parsed: unknown = JSON.parse(draft.recordingsText || "[]");
-      if (
-        !Array.isArray(parsed) ||
-        parsed.some(
-          (item) =>
-            !item ||
-            typeof item !== "object" ||
-            typeof item.id !== "string" ||
-            typeof item.type !== "string" ||
-            !RECORDING_TYPES.includes(item.type),
-        )
-      ) {
-        throw new Error("Use an array of recordings with valid IDs and types.");
-      }
-      recordings = parsed as Recording[];
-    } catch (reason) {
-      setError(
-        reason instanceof SyntaxError
-          ? "Recordings must be valid JSON."
-          : reason instanceof Error
-            ? reason.message
-            : "Could not read recordings.",
-      );
-      return;
-    }
-
     const hymn: Hymn = {
       id,
-      number: draft.number.trim(),
-      title: draft.title.trim(),
-      language: draft.language,
-      stanzas: draft.stanzasText
+      number: normalizedDraft.number.trim(),
+      title: normalizedDraft.title.trim(),
+      language: normalizedDraft.language,
+      stanzas: normalizedDraft.stanzasText
         .split(/\n\s*\n/)
         .map((stanza) => stanza.trim())
         .filter(Boolean),
-      recordings,
+      recordings: normalizedDraft.recordings,
       ...Object.fromEntries(
         [
           "chorus",
@@ -643,7 +791,7 @@ export default function CatalogueDashboard() {
           "permission",
           "artwork",
         ].flatMap((field) => {
-          const value = draft[field as keyof HymnDraft];
+          const value = normalizedDraft[field as keyof HymnDraft];
           return typeof value === "string" && value.trim()
             ? [[field, value.trim()]]
             : [];
@@ -1202,7 +1350,7 @@ export default function CatalogueDashboard() {
           <section className="editor-modal" role="dialog" aria-modal="true" aria-labelledby="editor-title">
             <header className="modal-header">
               <div><div className="eyebrow">CATALOGUE ENTRY</div><h2 id="editor-title">{editingId ? "Edit hymn" : "Add a hymn"}</h2></div>
-              <button className="close-button" aria-label="Close editor" onClick={closeEditor}>×</button>
+              <button className="close-button" aria-label="Close editor" disabled={uploadingAudio} onClick={closeEditor}>×</button>
             </header>
             <form onSubmit={saveHymn}>
               <div className="form-body">
@@ -1211,11 +1359,16 @@ export default function CatalogueDashboard() {
                     Source: {draft.source}. This creates one hymn entry. If this PDF contains a whole book, copy one hymn&apos;s text at a time from the PDF source preview and create separate entries.
                   </div>
                 )}
-                <div className="form-grid">
+                <div
+                  className="form-grid"
+                  lang={draft.language === "twi" ? "tw" : "en"}
+                  spellCheck={false}
+                >
                   <label>Stable ID <span className="required">*</span><input required value={draft.id} disabled={Boolean(editingId)} placeholder="english-001" onChange={(event) => updateDraft("id", event.target.value)} /></label>
                   <label>Hymn number <span className="required">*</span><input required value={draft.number} placeholder="001" onChange={(event) => updateDraft("number", event.target.value)} /></label>
                   <label className="full-field">Title <span className="required">*</span><input required value={draft.title} placeholder="Verified title" onChange={(event) => updateDraft("title", event.target.value)} /></label>
                   <label>Language <span className="required">*</span><select value={draft.language} onChange={(event) => updateDraft("language", event.target.value)}><option value="english">English</option><option value="twi">Twi</option></select></label>
+                  {draft.language === "twi" && <small className="full-field field-hint">Twi input enabled. Legacy codes 4, 1, and $ are converted to ɔ, ɛ, and Ɔ in text fields.</small>}
                   <label>Author<input value={draft.author ?? ""} placeholder="Author name" onChange={(event) => updateDraft("author", event.target.value)} /></label>
                   <label>Composer<input value={draft.composer ?? ""} placeholder="Composer name" onChange={(event) => updateDraft("composer", event.target.value)} /></label>
                   <label>Source<input value={draft.source ?? ""} placeholder="Verified source" onChange={(event) => updateDraft("source", event.target.value)} /></label>
@@ -1225,13 +1378,76 @@ export default function CatalogueDashboard() {
                   <label>Artwork URL<input value={draft.artwork ?? ""} placeholder="https://..." onChange={(event) => updateDraft("artwork", event.target.value)} /></label>
                   <label className="full-field">Attribution<input value={draft.attribution ?? ""} placeholder="Required attribution" onChange={(event) => updateDraft("attribution", event.target.value)} /></label>
                   <label className="full-field">Permission details<input value={draft.permission ?? ""} placeholder="Permission or licence details" onChange={(event) => updateDraft("permission", event.target.value)} /></label>
-                  <label className="full-field">Recordings (JSON)<textarea className="code-input" rows={6} spellCheck={false} value={draft.recordingsText} onChange={(event) => updateDraft("recordingsText", event.target.value)} /><small className="field-hint">Use an array of recording objects. Supported types: {RECORDING_TYPES.join(", ")}.</small></label>
+                  <div className="full-field recording-editor">
+                    <div className="recording-editor-heading">
+                      <div>
+                        <strong>Audio recordings</strong>
+                        <small className="field-hint">Upload an audio file and choose its recording style. MP3, M4A, AAC, WAV, OGG and FLAC are supported (100 MB maximum).</small>
+                      </div>
+                      <select
+                        aria-label="Recording style"
+                        value={recordingType}
+                        onChange={(event) => setRecordingType(event.target.value)}
+                      >
+                        {RECORDING_TYPES.map((type) => (
+                          <option value={type} key={type}>
+                            {RECORDING_TYPE_LABELS[type]}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <input
+                      ref={audioInput}
+                      className="recording-file-input"
+                      type="file"
+                      accept=".mp3,.m4a,.mp4,.aac,.wav,.ogg,.flac,audio/*"
+                      onChange={(event) => void uploadRecording(event)}
+                      aria-label="Choose hymn audio file"
+                    />
+                    <button
+                      className="button secondary"
+                      type="button"
+                      disabled={uploadingAudio || !supabase || !session || !isAdmin}
+                      onClick={() => audioInput.current?.click()}
+                    >
+                      <Icon name="upload" size={16} />
+                      {uploadingAudio ? "Uploading audio…" : "Upload audio"}
+                    </button>
+                    {!supabase && <small className="field-hint">Configure Supabase to upload audio files.</small>}
+                    {supabase && !isAdmin && <small className="field-hint">Sign in as an admin to upload audio files.</small>}
+                    {draft.recordings.length > 0 ? (
+                      <div className="recording-upload-list">
+                        {draft.recordings.map((recording) => (
+                          <div className="recording-upload-item" key={recording.id}>
+                            <Icon name="music" size={17} />
+                            <div>
+                              <strong>{RECORDING_TYPE_LABELS[recording.type] ?? recording.type}</strong>
+                              <small>{recording.fileSizeBytes ? `${(recording.fileSizeBytes / (1024 * 1024)).toFixed(1)} MB` : "Existing recording"}</small>
+                            </div>
+                            {recording.url && (
+                              <a href={recording.url} target="_blank" rel="noreferrer">Preview</a>
+                            )}
+                            <button
+                              className="text-button"
+                              type="button"
+                              onClick={() => removeRecording(recording.id)}
+                              aria-label={`Remove ${RECORDING_TYPE_LABELS[recording.type] ?? recording.type} recording from draft`}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <small className="field-hint">No audio recordings added yet.</small>
+                    )}
+                  </div>
                 </div>
                 {error && <div className="alert error-alert" role="alert">{error}</div>}
               </div>
               <footer className="modal-footer">
-                <button type="button" className="button secondary" onClick={closeEditor}>Cancel</button>
-                <button type="submit" className="button primary">{editingId ? "Save changes" : "Add hymn"}</button>
+                <button type="button" className="button secondary" disabled={uploadingAudio} onClick={closeEditor}>Cancel</button>
+                <button type="submit" className="button primary" disabled={uploadingAudio}>{editingId ? "Save changes" : "Add hymn"}</button>
               </footer>
             </form>
           </section>

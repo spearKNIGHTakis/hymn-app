@@ -37,7 +37,30 @@ class _AppShellState extends State<AppShell> {
 
   void _open(Hymn hymn) {
     Navigator.of(context).push(
-        MaterialPageRoute<void>(builder: (_) => HymnDetailScreen(hymn: hymn)));
+      PageRouteBuilder<void>(
+        transitionDuration: const Duration(milliseconds: 240),
+        reverseTransitionDuration: const Duration(milliseconds: 180),
+        pageBuilder: (_, __, ___) => HymnDetailScreen(hymn: hymn),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          if (MediaQuery.of(context).disableAnimations) return child;
+          final eased = CurvedAnimation(
+            parent: animation,
+            curve: Curves.easeOutCubic,
+            reverseCurve: Curves.easeInCubic,
+          );
+          return FadeTransition(
+            opacity: eased,
+            child: SlideTransition(
+              position: Tween<Offset>(
+                begin: const Offset(0.025, 0),
+                end: Offset.zero,
+              ).animate(eased),
+              child: child,
+            ),
+          );
+        },
+      ),
+    );
   }
 
   @override
@@ -160,12 +183,18 @@ class HomeScreen extends StatelessWidget {
         .take(3)
         .toList();
     return ListView(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 24),
+      padding: const EdgeInsets.fromLTRB(20, 12, 20, 24),
       children: [
+        Text('Welcome to',
+            style: Theme.of(context).textTheme.titleMedium?.copyWith(
+                  color: AppColors.muted,
+                  fontWeight: FontWeight.w500,
+                )),
+        const SizedBox(height: 2),
         Text('Sing in Faith',
             style: Theme.of(context)
                 .textTheme
-                .headlineMedium
+                .headlineLarge
                 ?.copyWith(fontWeight: FontWeight.w700)),
         const SizedBox(height: 4),
         Text('A place for the hymns we sing together.',
@@ -173,9 +202,15 @@ class HomeScreen extends StatelessWidget {
                 .textTheme
                 .bodyLarge
                 ?.copyWith(color: AppColors.muted)),
-        const SizedBox(height: 22),
+        const SizedBox(height: 18),
         SearchField(hymns: hymns, openHymn: openHymn),
         const SizedBox(height: 20),
+        Text('Browse by language',
+            style: Theme.of(context)
+                .textTheme
+                .titleMedium
+                ?.copyWith(fontWeight: FontWeight.w700)),
+        const SizedBox(height: 10),
         Row(children: [
           Expanded(
               child: LanguageTile(
@@ -189,7 +224,7 @@ class HomeScreen extends StatelessWidget {
                   language: HymnLanguage.twi,
                   onTap: () => openLanguage(HymnLanguage.twi))),
         ]),
-        const SizedBox(height: 22),
+        const SizedBox(height: 24),
         Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
           Text('Recently played',
               style: Theme.of(context)
@@ -228,28 +263,137 @@ class HomeScreen extends StatelessWidget {
   }
 }
 
-class SearchField extends StatelessWidget {
+class SearchField extends StatefulWidget {
   const SearchField({required this.hymns, required this.openHymn, super.key});
   final List<Hymn> hymns;
   final ValueChanged<Hymn> openHymn;
 
   @override
-  Widget build(BuildContext context) => TextField(
-        decoration: const InputDecoration(
-            prefixIcon: Icon(Icons.search),
-            hintText: 'Search number, title or lyrics'),
-        onSubmitted: (query) {
-          final result =
-              context.read<HymnRepository>().search(hymns, query: query);
-          if (result.length == 1) {
-            openHymn(result.single);
-          } else {
-            Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) => SearchResultsScreen(
-                    hymns: result, openHymn: openHymn, query: query)));
-          }
-        },
-      );
+  State<SearchField> createState() => _SearchFieldState();
+}
+
+class _SearchFieldState extends State<SearchField> {
+  final _controller = TextEditingController();
+  String _query = '';
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _showResults() {
+    final query = _query.trim();
+    if (query.isEmpty) return;
+    final result =
+        context.read<HymnRepository>().search(widget.hymns, query: query);
+    if (result.length == 1) {
+      widget.openHymn(result.single);
+    } else {
+      Navigator.of(context).push(MaterialPageRoute<void>(
+          builder: (_) => SearchResultsScreen(
+              hymns: result, openHymn: widget.openHymn, query: query)));
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final allMatches = _query.trim().isEmpty
+        ? const <Hymn>[]
+        : context.read<HymnRepository>().search(widget.hymns, query: _query);
+    final matches = allMatches.take(4).toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        TextField(
+          controller: _controller,
+          textInputAction: TextInputAction.search,
+          decoration: InputDecoration(
+            prefixIcon: const Icon(Icons.search),
+            hintText: 'Search hymns by number, title or lyrics',
+            suffixIcon: _query.isEmpty
+                ? null
+                : IconButton(
+                    tooltip: 'Clear search',
+                    onPressed: () {
+                      _controller.clear();
+                      setState(() => _query = '');
+                    },
+                    icon: const Icon(Icons.close),
+                  ),
+          ),
+          onChanged: (value) => setState(() => _query = value),
+          onSubmitted: (_) => _showResults(),
+        ),
+        AnimatedSize(
+          duration: MediaQuery.of(context).disableAnimations
+              ? Duration.zero
+              : const Duration(milliseconds: 220),
+          curve: Curves.easeOutCubic,
+          alignment: Alignment.topCenter,
+          child: AnimatedSwitcher(
+            duration: MediaQuery.of(context).disableAnimations
+                ? Duration.zero
+                : const Duration(milliseconds: 180),
+            reverseDuration: MediaQuery.of(context).disableAnimations
+                ? Duration.zero
+                : const Duration(milliseconds: 140),
+            switchInCurve: Curves.easeOut,
+            switchOutCurve: Curves.easeIn,
+            transitionBuilder: (child, animation) => SizeTransition(
+              sizeFactor: animation,
+              alignment: Alignment.topCenter,
+              child: FadeTransition(opacity: animation, child: child),
+            ),
+            child: _query.trim().isEmpty
+                ? const SizedBox.shrink(key: ValueKey('empty-search'))
+                : Padding(
+                    key: ValueKey(matches.isEmpty ? 'no-matches' : 'matches'),
+                    padding: const EdgeInsets.only(top: 8),
+                    child: matches.isEmpty
+                        ? Card(
+                            child: Padding(
+                              padding: const EdgeInsets.all(16),
+                              child: Row(
+                                children: [
+                                  const Icon(Icons.search_off,
+                                      color: AppColors.muted),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Text(
+                                      'No hymns found. Try another number, title or lyric.',
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .bodyMedium,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        : Card(
+                            clipBehavior: Clip.antiAlias,
+                            child: Column(
+                              children: [
+                                ...matches.map((hymn) => HymnRow(
+                                      hymn: hymn,
+                                      onTap: () => widget.openHymn(hymn),
+                                    )),
+                                if (allMatches.length > matches.length)
+                                  TextButton.icon(
+                                    onPressed: _showResults,
+                                    icon: const Icon(Icons.arrow_forward),
+                                    label: const Text('See all results'),
+                                  ),
+                              ],
+                            ),
+                          ),
+                  ),
+          ),
+        ),
+      ],
+    );
+  }
 }
 
 class SearchResultsScreen extends StatelessWidget {
@@ -271,6 +415,7 @@ class SearchResultsScreen extends StatelessWidget {
                 title: 'No matching hymns',
                 detail: 'Try a different number, title or lyric.')
             : ListView(
+                padding: const EdgeInsets.all(16),
                 children: hymns
                     .map((hymn) =>
                         HymnRow(hymn: hymn, onTap: () => openHymn(hymn)))
@@ -292,14 +437,14 @@ class LanguageTile extends StatelessWidget {
   Widget build(BuildContext context) {
     return InkWell(
       onTap: onTap,
-      borderRadius: BorderRadius.circular(8),
+      borderRadius: BorderRadius.circular(18),
       child: Ink(
         padding: const EdgeInsets.all(15),
         decoration: BoxDecoration(
             color: language == HymnLanguage.english
                 ? AppColors.blue
                 : AppColors.green,
-            borderRadius: BorderRadius.circular(8)),
+            borderRadius: BorderRadius.circular(18)),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Icon(
               language == HymnLanguage.english
@@ -421,6 +566,7 @@ class _HymnListScreenState extends State<HymnListScreen> {
                     : 'Try another search or language filter.',
               )
             : ListView.builder(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                 itemCount: filtered.length,
                 itemBuilder: (_, index) => HymnRow(
                     hymn: filtered[index],
@@ -430,21 +576,173 @@ class _HymnListScreenState extends State<HymnListScreen> {
   }
 }
 
-class HymnRow extends StatelessWidget {
+class HymnRow extends StatefulWidget {
   const HymnRow({required this.hymn, required this.onTap, super.key});
   final Hymn hymn;
   final VoidCallback onTap;
 
   @override
-  Widget build(BuildContext context) => ListTile(
-        onTap: onTap,
-        leading: CircleAvatar(
-            backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-            child: Text(hymn.number, style: const TextStyle(fontSize: 12))),
-        title: Text(hymn.title, maxLines: 1, overflow: TextOverflow.ellipsis),
-        subtitle: Text(
-            '${hymn.language.label} · ${hymn.recordings.length} recordings'),
-        trailing: const Icon(Icons.chevron_right),
+  State<HymnRow> createState() => _HymnRowState();
+}
+
+class _HymnRowState extends State<HymnRow> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = Theme.of(context).colorScheme;
+    final reduceMotion = MediaQuery.of(context).disableAnimations;
+    final hymn = widget.hymn;
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      clipBehavior: Clip.antiAlias,
+      child: AnimatedScale(
+        scale: _pressed && !reduceMotion ? 0.985 : 1,
+        duration:
+            reduceMotion ? Duration.zero : const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+        child: InkWell(
+          onTap: widget.onTap,
+          onHighlightChanged: (pressed) {
+            if (_pressed != pressed) setState(() => _pressed = pressed);
+          },
+          borderRadius: BorderRadius.circular(18),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+            child: Row(
+              children: [
+                Container(
+                  width: 52,
+                  height: 52,
+                  decoration: BoxDecoration(
+                    color: colors.primaryContainer,
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  alignment: Alignment.center,
+                  child: Text(
+                    hymn.number,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: colors.onPrimaryContainer,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        hymn.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style:
+                            Theme.of(context).textTheme.titleMedium?.copyWith(
+                                  fontWeight: FontWeight.w700,
+                                  height: 1.2,
+                                ),
+                      ),
+                      const SizedBox(height: 7),
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 4,
+                        crossAxisAlignment: WrapCrossAlignment.center,
+                        children: [
+                          _HymnMetadataChip(
+                            icon: Icons.language,
+                            label: hymn.language.label,
+                          ),
+                          _HymnMetadataChip(
+                            icon: hymn.recordings.isEmpty
+                                ? Icons.music_off_outlined
+                                : Icons.headphones_outlined,
+                            label: hymn.recordings.isEmpty
+                                ? 'No recording'
+                                : '${hymn.recordings.length} ${hymn.recordings.length == 1 ? 'recording' : 'recordings'}',
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: 8),
+                Icon(Icons.arrow_forward_ios,
+                    size: 16, color: colors.onSurfaceVariant),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _StanzaReveal extends StatefulWidget {
+  const _StanzaReveal({required this.index, required this.child});
+
+  final int index;
+  final Widget child;
+
+  @override
+  State<_StanzaReveal> createState() => _StanzaRevealState();
+}
+
+class _StanzaRevealState extends State<_StanzaReveal>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 520),
+  )..forward();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.of(context).disableAnimations) return widget.child;
+    final begin = (widget.index * 0.09).clamp(0.0, 0.72);
+    final animation = CurvedAnimation(
+      parent: _controller,
+      curve: Interval(begin, 1, curve: Curves.easeOutCubic),
+    );
+    return FadeTransition(
+      opacity: animation,
+      child: SlideTransition(
+        position: Tween<Offset>(
+          begin: const Offset(0, 0.035),
+          end: Offset.zero,
+        ).animate(animation),
+        child: widget.child,
+      ),
+    );
+  }
+}
+
+class _HymnMetadataChip extends StatelessWidget {
+  const _HymnMetadataChip({required this.icon, required this.label});
+
+  final IconData icon;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) => Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: AppColors.muted),
+          const SizedBox(width: 4),
+          Text(
+            label,
+            style: Theme.of(context)
+                .textTheme
+                .labelSmall
+                ?.copyWith(color: AppColors.muted),
+          ),
+        ],
       );
 }
 
@@ -535,6 +833,55 @@ class _HymnDetailScreenState extends State<HymnDetailScreen> {
                 ].join(' · '),
                 style: const TextStyle(color: AppColors.muted)),
           ],
+          const SizedBox(height: 12),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+              child: Row(
+                children: [
+                  Text('Text', style: Theme.of(context).textTheme.labelLarge),
+                  IconButton(
+                    tooltip: 'Decrease lyric text size',
+                    onPressed: store.lyricScale <= 0.8
+                        ? null
+                        : () => store.setLyricScale(store.lyricScale - 0.1),
+                    icon: const Icon(Icons.remove),
+                  ),
+                  Text(
+                    '${(store.lyricScale * 100).round()}%',
+                    semanticsLabel:
+                        'Lyric text size ${(store.lyricScale * 100).round()} percent',
+                  ),
+                  IconButton(
+                    tooltip: 'Increase lyric text size',
+                    onPressed: store.lyricScale >= 1.5
+                        ? null
+                        : () => store.setLyricScale(store.lyricScale + 0.1),
+                    icon: const Icon(Icons.add),
+                  ),
+                  const Spacer(),
+                  DropdownButton<LyricFontStyle>(
+                    value: store.lyricFontStyle,
+                    underline: const SizedBox.shrink(),
+                    isDense: true,
+                    items: const [
+                      DropdownMenuItem(
+                        value: LyricFontStyle.sans,
+                        child: Text('Sans'),
+                      ),
+                      DropdownMenuItem(
+                        value: LyricFontStyle.serif,
+                        child: Text('Serif'),
+                      ),
+                    ],
+                    onChanged: (value) {
+                      if (value != null) store.setLyricFontStyle(value);
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ),
           const SizedBox(height: 18),
           if (hymn.stanzas.isEmpty)
             const EmptyState(
@@ -542,35 +889,96 @@ class _HymnDetailScreenState extends State<HymnDetailScreen> {
                 title: 'Lyrics not added yet',
                 detail: 'Verified lyrics will appear here when supplied.')
           else
-            ...hymn.stanzas.asMap().entries.map((entry) => Padding(
-                  padding: const EdgeInsets.only(bottom: 24),
-                  child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text('STANZA ${entry.key + 1}',
-                            style: Theme.of(context)
-                                .textTheme
-                                .labelSmall
-                                ?.copyWith(color: AppColors.muted)),
-                        const SizedBox(height: 8),
-                        Text(entry.value,
+            ...hymn.stanzas.asMap().entries.map((entry) => _StanzaReveal(
+                  index: entry.key,
+                  child: Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    child: Padding(
+                      padding: const EdgeInsets.all(18),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              CircleAvatar(
+                                radius: 15,
+                                backgroundColor: Theme.of(context)
+                                    .colorScheme
+                                    .primaryContainer,
+                                child: Text(
+                                  '${entry.key + 1}',
+                                  style: Theme.of(context)
+                                      .textTheme
+                                      .labelMedium
+                                      ?.copyWith(
+                                        color: Theme.of(context)
+                                            .colorScheme
+                                            .onPrimaryContainer,
+                                        fontWeight: FontWeight.w700,
+                                      ),
+                                ),
+                              ),
+                              const SizedBox(width: 10),
+                              Text(
+                                'STANZA ${entry.key + 1}',
+                                style: Theme.of(context)
+                                    .textTheme
+                                    .labelMedium
+                                    ?.copyWith(
+                                      color: AppColors.muted,
+                                      fontWeight: FontWeight.w700,
+                                      letterSpacing: 0.6,
+                                    ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 14),
+                          Text(
+                            entry.value,
                             style: TextStyle(
-                                fontSize: 20 * store.lyricScale, height: 1.65)),
-                      ]),
+                              fontSize: 20 * store.lyricScale,
+                              height: 1.65,
+                              fontFamily: store.lyricFontStyle.fontFamily,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 )),
           if (hymn.chorus != null) ...[
-            Text('CHORUS',
-                style: Theme.of(context)
-                    .textTheme
-                    .labelSmall
-                    ?.copyWith(color: AppColors.muted)),
-            const SizedBox(height: 8),
-            Text(hymn.chorus!,
-                style: TextStyle(
-                    fontSize: 20 * store.lyricScale,
-                    height: 1.65,
-                    fontWeight: FontWeight.w600)),
-            const SizedBox(height: 20),
+            Card(
+              margin: const EdgeInsets.only(bottom: 20),
+              color: Theme.of(context).colorScheme.secondaryContainer,
+              child: Padding(
+                padding: const EdgeInsets.all(18),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'CHORUS',
+                      style: Theme.of(context).textTheme.labelMedium?.copyWith(
+                            color: Theme.of(context)
+                                .colorScheme
+                                .onSecondaryContainer,
+                            fontWeight: FontWeight.w700,
+                            letterSpacing: 0.6,
+                          ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      hymn.chorus!,
+                      style: TextStyle(
+                        fontSize: 20 * store.lyricScale,
+                        height: 1.65,
+                        fontWeight: FontWeight.w600,
+                        fontFamily: store.lyricFontStyle.fontFamily,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
           ],
           if (hymn.recordings.isEmpty)
             const ListTile(
@@ -609,8 +1017,30 @@ class _HymnDetailScreenState extends State<HymnDetailScreen> {
                             width: 18,
                             height: 18,
                             child: CircularProgressIndicator(strokeWidth: 2))
-                        : Icon(playing ? Icons.pause : Icons.play_arrow),
-                    label: Text(playing ? 'Pause' : 'Listen'),
+                        : AnimatedSwitcher(
+                            duration: MediaQuery.of(context).disableAnimations
+                                ? Duration.zero
+                                : const Duration(milliseconds: 180),
+                            transitionBuilder: (child, animation) =>
+                                ScaleTransition(
+                              scale: animation,
+                              child: FadeTransition(
+                                  opacity: animation, child: child),
+                            ),
+                            child: Icon(
+                              playing ? Icons.pause : Icons.play_arrow,
+                              key: ValueKey(playing),
+                            ),
+                          ),
+                    label: AnimatedSwitcher(
+                      duration: MediaQuery.of(context).disableAnimations
+                          ? Duration.zero
+                          : const Duration(milliseconds: 160),
+                      child: Text(
+                        playing ? 'Pause' : 'Listen',
+                        key: ValueKey(playing),
+                      ),
+                    ),
                   );
                 },
               ),
@@ -665,16 +1095,32 @@ class _HymnDetailScreenState extends State<HymnDetailScreen> {
                 return Row(children: [
                   Text(_durationLabel(position)),
                   Expanded(
-                    child: Slider(
-                      min: 0,
-                      max: duration.inMilliseconds.clamp(1, 1 << 30).toDouble(),
-                      value: position.inMilliseconds
-                          .clamp(0, duration.inMilliseconds)
-                          .toDouble(),
-                      onChanged: duration == Duration.zero
-                          ? null
-                          : (value) => player
-                              .seek(Duration(milliseconds: value.round())),
+                    child: TweenAnimationBuilder<double>(
+                      tween: Tween<double>(
+                        begin: position.inMilliseconds
+                            .clamp(0, duration.inMilliseconds)
+                            .toDouble(),
+                        end: position.inMilliseconds
+                            .clamp(0, duration.inMilliseconds)
+                            .toDouble(),
+                      ),
+                      duration: MediaQuery.of(context).disableAnimations
+                          ? Duration.zero
+                          : const Duration(milliseconds: 120),
+                      curve: Curves.easeOut,
+                      builder: (context, animatedPosition, _) => Slider(
+                        min: 0,
+                        max: duration.inMilliseconds
+                            .clamp(1, 1 << 30)
+                            .toDouble(),
+                        value: animatedPosition
+                            .clamp(0, duration.inMilliseconds)
+                            .toDouble(),
+                        onChanged: duration == Duration.zero
+                            ? null
+                            : (value) => player
+                                .seek(Duration(milliseconds: value.round())),
+                      ),
                     ),
                   ),
                   Text(_durationLabel(duration)),
@@ -765,7 +1211,19 @@ class MiniPlayer extends StatelessWidget {
               tooltip: playing ? 'Pause' : 'Resume',
               onPressed: () =>
                   playing ? audio.player.pause() : audio.player.play(),
-              icon: Icon(playing ? Icons.pause : Icons.play_arrow),
+              icon: AnimatedSwitcher(
+                duration: MediaQuery.of(context).disableAnimations
+                    ? Duration.zero
+                    : const Duration(milliseconds: 180),
+                transitionBuilder: (child, animation) => ScaleTransition(
+                  scale: animation,
+                  child: FadeTransition(opacity: animation, child: child),
+                ),
+                child: Icon(
+                  playing ? Icons.pause : Icons.play_arrow,
+                  key: ValueKey(playing),
+                ),
+              ),
             ),
           ),
         );

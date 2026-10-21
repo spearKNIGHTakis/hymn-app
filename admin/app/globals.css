@@ -180,6 +180,18 @@ tbody tr:hover { background: #fcfdfa; }
 .form-grid .required { color: #b85b51; }
 .form-grid .code-input { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 10px; }
 .field-hint { color: #8e948c; font-size: 9px; font-weight: 400; line-height: 1.5; }
+.recording-editor { background: #fafbf9; border: 1px solid #e9ece7; border-radius: 12px; display: flex; flex-direction: column; gap: 12px; padding: 14px; }
+.recording-editor-heading { align-items: flex-start; display: flex; flex-wrap: wrap; gap: 12px; justify-content: space-between; }
+.recording-editor-heading > div { display: flex; flex: 1; flex-direction: column; gap: 5px; min-width: 190px; }
+.recording-editor-heading strong { color: #424940; font-size: 11px; }
+.recording-editor select { background: #fff; border: 1px solid #e2e5df; border-radius: 8px; color: #424940; font-size: 10px; min-height: 35px; padding: 0 28px 0 10px; }
+.recording-file-input { height: 1px; opacity: 0; overflow: hidden; position: absolute; width: 1px; }
+.recording-upload-list { display: flex; flex-direction: column; }
+.recording-upload-item { align-items: center; border-top: 1px solid #e9ece7; color: #657064; display: flex; gap: 10px; min-height: 50px; padding: 8px 0; }
+.recording-upload-item > div { display: flex; flex: 1; flex-direction: column; gap: 4px; min-width: 0; }
+.recording-upload-item strong { color: #414940; font-size: 10px; }
+.recording-upload-item small { color: #8e948c; font-size: 9px; }
+.recording-upload-item a, .recording-upload-item .text-button { color: var(--green); font-size: 10px; white-space: nowrap; }
 .form-body .alert { margin: 16px 0 0; }
 .modal-footer { border-top: 1px solid var(--line); display: flex; gap: 8px; justify-content: flex-end; padding: 14px 24px; }
 .visually-hidden { clip: rect(0, 0, 0, 0); clip-path: inset(50%); height: 1px; overflow: hidden; position: absolute; white-space: nowrap; width: 1px; }
