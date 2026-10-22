@@ -809,7 +809,7 @@ export default function CatalogueDashboard() {
         }));
         setAudioUploadTarget(null);
         setNotice(
-          `${file.name} uploaded and added to ${targetHymn.title}. Save the catalogue draft to sync it to Supabase.`,
+          `${file.name} uploaded and added to ${targetHymn.title}. Save the draft to cloud, then publish to app to make it playable.`,
         );
       } else {
         setDraft((current) =>
@@ -817,7 +817,9 @@ export default function CatalogueDashboard() {
             ? { ...current, recordings: [...current.recordings, recording] }
             : current,
         );
-        setNotice(`${file.name} uploaded and added to this hymn.`);
+        setNotice(
+          `${file.name} uploaded and added to this hymn. Save the draft to cloud, then publish to app to make it playable.`,
+        );
       }
     } catch (reason) {
       setError(

@@ -1,3 +1,5 @@
+begin;
+
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
   'hymn-audio',
@@ -18,6 +20,15 @@ on conflict (id) do update
 set public = excluded.public,
     file_size_limit = excluded.file_size_limit,
     allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "Anyone can listen to hymn audio"
+on storage.objects;
+drop policy if exists "Admins can upload hymn audio"
+on storage.objects;
+drop policy if exists "Admins can update hymn audio"
+on storage.objects;
+drop policy if exists "Admins can delete hymn audio"
+on storage.objects;
 
 create policy "Anyone can listen to hymn audio"
 on storage.objects for select
@@ -51,3 +62,5 @@ using (
   bucket_id = 'hymn-audio'
   and (select public.is_catalogue_admin())
 );
+
+commit;
