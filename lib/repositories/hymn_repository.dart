@@ -113,7 +113,10 @@ class HymnRepository {
             'The published catalogue response is malformed.');
       }
       final catalogueJson = jsonEncode(row['content']);
-      final remoteHymns = parseCatalogue(catalogueJson);
+      final remoteHymns = await _resolvePlaybackUrls(
+        parseCatalogue(catalogueJson),
+        baseUri,
+      );
       final saved = await preferences.setString(_cacheKey, catalogueJson);
       return CatalogueLoadResult(
         hymns: remoteHymns,
@@ -130,6 +133,70 @@ class HymnRepository {
             'Could not sync the published catalogue; showing ${cachedHymns == null ? "the bundled" : "the saved offline"} version. $error',
       );
     }
+  }
+
+  Future<List<Hymn>> _resolvePlaybackUrls(
+    List<Hymn> hymns,
+    Uri baseUri,
+  ) async {
+    return Future.wait(
+      hymns.map((hymn) async {
+        final recordings = await Future.wait(
+          hymn.recordings.map((recording) async {
+            final storagePath = recording.storagePath;
+            if (storagePath == null) return recording;
+
+            final encodedPath = storagePath
+                .split('/')
+                .map(Uri.encodeComponent)
+                .join('/');
+            final uri = Uri.parse(
+              '${baseUri.scheme}://${baseUri.authority}/storage/v1/object/sign/hymn-audio/$encodedPath',
+            );
+            final response = await http
+                .post(
+                  uri,
+                  headers: {
+                    'apikey': supabaseAnonKey,
+                    'Authorization': 'Bearer $supabaseAnonKey',
+                    'Content-Type': 'application/json',
+                  },
+                  body: jsonEncode({'expiresIn': 3600}),
+                )
+                .timeout(const Duration(seconds: 12));
+            if (response.statusCode != 200) {
+              throw HttpException(
+                'Could not create a playback URL for a published recording (HTTP ${response.statusCode}).',
+                uri: uri,
+              );
+            }
+            final body = jsonDecode(response.body);
+            if (body is! Map<String, dynamic> ||
+                body['signedURL'] is! String ||
+                (body['signedURL'] as String).isEmpty) {
+              throw const FormatException(
+                'The recording playback response is malformed.',
+              );
+            }
+            final returnedPath = body['signedURL'] as String;
+            final playbackUri = returnedPath.startsWith('https://')
+                ? Uri.parse(returnedPath)
+                : Uri.parse(
+                    '${baseUri.scheme}://${baseUri.authority}${returnedPath.startsWith('/storage/v1/') ? returnedPath : '/storage/v1$returnedPath'}',
+                  );
+            if (playbackUri.scheme != 'https' ||
+                playbackUri.host != baseUri.host ||
+                playbackUri.authority != baseUri.authority) {
+              throw const FormatException(
+                'The recording playback URL is not hosted by this Supabase project.',
+              );
+            }
+            return recording.withPlaybackUrl(playbackUri.toString());
+          }),
+        );
+        return hymn.withRecordings(recordings);
+      }),
+    );
   }
 
   List<Hymn> parseCatalogue(String source) {

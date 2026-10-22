@@ -96,6 +96,26 @@ void main() {
     );
   });
 
+  test('parses private Storage paths for recordings', () {
+    final recording = HymnRecording.fromJson({
+      'id': 'recording-id',
+      'type': 'choir',
+      'storagePath': 'english-001/recording-id.mp3',
+      'fileSizeBytes': 2048,
+    });
+
+    expect(recording.storagePath, 'english-001/recording-id.mp3');
+    expect(recording.url, isNull);
+    expect(
+      () => HymnRecording.fromJson({
+        'id': 'recording-id',
+        'type': 'choir',
+        'storagePath': '../private.mp3',
+      }),
+      throwsFormatException,
+    );
+  });
+
   test('rejects malformed optional metadata instead of crashing later', () {
     expect(
       () => Hymn.fromJson({

@@ -30,6 +30,7 @@ type Recording = {
   id: string;
   type: string;
   url?: string;
+  storagePath?: string;
   durationSeconds?: number;
   fileSizeBytes?: number;
   attribution?: string;
@@ -293,6 +294,18 @@ function validateCatalogue(value: unknown): Catalogue {
             throw new Error(`Recording "${audio.id}" must use a valid HTTPS URL.`);
           }
         }
+        if (audio.storagePath !== undefined) {
+          if (
+            typeof audio.storagePath !== "string" ||
+            !audio.storagePath.trim() ||
+            audio.storagePath.startsWith("/") ||
+            audio.storagePath
+              .split("/")
+              .some((part) => !part || part === "." || part === "..")
+          ) {
+            throw new Error(`Recording "${audio.id}" has an invalid storage path.`);
+          }
+        }
       }
       for (const field of ["attribution", "permission"] as const) {
         if (audio[field] !== undefined && typeof audio[field] !== "string") {
@@ -469,8 +482,10 @@ export default function CatalogueDashboard() {
   const [pdfImports, setPdfImports] = useState<PdfImport[]>([]);
   const [uploadingPdfs, setUploadingPdfs] = useState(false);
   const [uploadingAudio, setUploadingAudio] = useState(false);
+  const [selectedAudioFile, setSelectedAudioFile] = useState<File | null>(null);
   const [recordingType, setRecordingType] = useState(RECORDING_TYPES[0]);
   const [audioUploadTarget, setAudioUploadTarget] = useState<Hymn | null>(null);
+  const uploadingAudioRef = useRef(false);
   const fileInput = useRef<HTMLInputElement>(null);
   const pdfInput = useRef<HTMLInputElement>(null);
   const audioInput = useRef<HTMLInputElement>(null);
@@ -670,6 +685,7 @@ export default function CatalogueDashboard() {
   function openAudioUpload(hymn: Hymn) {
     setError("");
     setNotice("");
+    setSelectedAudioFile(null);
     setRecordingType(RECORDING_TYPES[0]);
     setAudioUploadTarget(hymn);
     setMenuId(null);
@@ -700,6 +716,13 @@ export default function CatalogueDashboard() {
     input.click();
   }
 
+  function selectAudioFile(event: ChangeEvent<HTMLInputElement>) {
+    setSelectedAudioFile(event.target.files?.[0] ?? null);
+    event.target.value = "";
+    setError("");
+    setNotice("");
+  }
+
   function closeEditor() {
     if (uploadingAudio) {
       setError("Wait for the audio upload to finish before closing this hymn.");
@@ -707,6 +730,7 @@ export default function CatalogueDashboard() {
     }
     setDraft(null);
     setEditingId(null);
+    setSelectedAudioFile(null);
     setError("");
   }
 
@@ -726,73 +750,108 @@ export default function CatalogueDashboard() {
     });
   }
 
-  async function uploadRecording(
-    event: ChangeEvent<HTMLInputElement>,
-    targetHymn: Hymn | null = null,
-  ) {
-    const file = event.target.files?.[0];
-    event.target.value = "";
+  async function uploadRecording(targetHymn: Hymn | null = null) {
+    if (uploadingAudioRef.current) return;
+    uploadingAudioRef.current = true;
     setError("");
+    const file = selectedAudioFile;
     if (!file) {
       setError("No audio file was selected. Choose an audio file and try again.");
+      uploadingAudioRef.current = false;
       return;
     }
     if (!draft && !targetHymn) {
       setError("Open a hymn draft before adding an audio recording.");
+      uploadingAudioRef.current = false;
       return;
     }
     if (!supabase || !session || !isAdmin) {
       setError("Sign in as an admin to upload hymn recordings.");
+      uploadingAudioRef.current = false;
       return;
     }
-    const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
-    const audioTypes: Record<string, string> = {
-      mp3: "audio/mpeg",
-      m4a: "audio/mp4",
-      mp4: "audio/mp4",
-      aac: "audio/aac",
-      wav: "audio/wav",
-      ogg: "audio/ogg",
-      flac: "audio/flac",
-    };
-    const contentType = audioTypes[extension];
-    if (!contentType) {
-      setError("Choose an MP3, M4A, AAC, WAV, OGG or FLAC audio file.");
+    if (!file.name.toLowerCase().endsWith(".mp3")) {
+      setError("Choose an MP3 file with a .mp3 extension.");
+      uploadingAudioRef.current = false;
       return;
     }
-    if (file.size > 100 * 1024 * 1024) {
-      setError("Audio files must be 100 MB or smaller.");
+    const mimeType = file.type.trim().toLowerCase();
+    if (
+      mimeType &&
+      ![
+        "audio/mpeg",
+        "audio/mp3",
+        "audio/x-mpeg",
+        "audio/x-mp3",
+        "audio/mpg",
+        "application/octet-stream",
+      ].includes(mimeType)
+    ) {
+      setError("This file has an incompatible audio type. Choose an MP3 file.");
+      uploadingAudioRef.current = false;
+      return;
+    }
+    if (file.size <= 0 || file.size > 100 * 1024 * 1024) {
+      setError(
+        file.size <= 0
+          ? "The selected MP3 file is empty. Choose a valid audio file."
+          : "Audio files must be 100 MB or smaller.",
+      );
+      uploadingAudioRef.current = false;
       return;
     }
     const hymnId = (targetHymn?.id ?? draft?.id ?? "").trim();
     if (!hymnId) {
       setError("Enter the hymn's stable ID before uploading its recording.");
+      uploadingAudioRef.current = false;
       return;
     }
 
     setUploadingAudio(true);
-    setError("");
     setNotice("");
-    const safeHymnId = hymnId.replace(/[^a-zA-Z0-9_-]/g, "_");
-    const safeFilename = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+    let recordingId = "";
+    let storagePath = "";
+    let storageUploaded = false;
+    let recordingInserted = false;
+    const hymnLanguage = targetHymn?.language ?? draft?.language;
+    if (!hymnLanguage) {
+      setError("Could not determine the hymn language for this recording.");
+      uploadingAudioRef.current = false;
+      setUploadingAudio(false);
+      return;
+    }
     try {
-      const storagePath = `${session.user.id}/${safeHymnId}/${createUuid()}-${safeFilename}`;
+      recordingId = createUuid();
+      storagePath = `${hymnId.replace(/[^a-zA-Z0-9_-]/g, "_")}/${recordingId}.mp3`;
       const { error: uploadError } = await supabase.storage
         .from("hymn-audio")
         .upload(storagePath, file, {
-          contentType,
+          contentType: "audio/mpeg",
           upsert: false,
         });
       if (uploadError) {
         throw new Error(`Audio upload failed: ${uploadError.message}`);
       }
-      const { data } = supabase.storage
-        .from("hymn-audio")
-        .getPublicUrl(storagePath);
+      storageUploaded = true;
+      const { error: insertError } = await supabase
+        .from("hymn_recordings")
+        .insert({
+          id: recordingId,
+          hymn_id: hymnId,
+          storage_path: storagePath,
+          language: hymnLanguage,
+          recording_type: recordingType,
+          file_size_bytes: file.size,
+          created_by: session.user.id,
+        });
+      if (insertError) {
+        throw new Error(`The recording record could not be saved: ${insertError.message}`);
+      }
+      recordingInserted = true;
       const recording: Recording = {
-        id: createUuid(),
+        id: recordingId,
         type: recordingType,
-        url: data.publicUrl,
+        storagePath,
         fileSizeBytes: file.size,
       };
       if (targetHymn) {
@@ -807,9 +866,10 @@ export default function CatalogueDashboard() {
               : hymn,
           ),
         }));
+        setSelectedAudioFile(null);
         setAudioUploadTarget(null);
         setNotice(
-          `${file.name} uploaded and added to ${targetHymn.title}. Save the draft to cloud, then publish to app to make it playable.`,
+          `${file.name} uploaded and linked to ${targetHymn.title}. Save the draft to cloud, then publish to app to make it playable.`,
         );
       } else {
         setDraft((current) =>
@@ -817,15 +877,36 @@ export default function CatalogueDashboard() {
             ? { ...current, recordings: [...current.recordings, recording] }
             : current,
         );
+        setSelectedAudioFile(null);
         setNotice(
-          `${file.name} uploaded and added to this hymn. Save the draft to cloud, then publish to app to make it playable.`,
+          `${file.name} uploaded and linked to this hymn. Save the draft to cloud, then publish to app to make it playable.`,
         );
       }
     } catch (reason) {
-      setError(
-        reason instanceof Error ? reason.message : "Audio upload failed.",
-      );
+      let message =
+        reason instanceof Error ? reason.message : "Audio upload failed.";
+      if (storageUploaded && !recordingInserted) {
+        try {
+          const { error: cleanupError } = await supabase.storage
+            .from("hymn-audio")
+            .remove([storagePath]);
+          if (cleanupError) {
+            message += ` The uploaded file could not be removed automatically: ${cleanupError.message}`;
+          } else {
+            storageUploaded = false;
+            message += " The uploaded file was removed.";
+          }
+        } catch (cleanupReason) {
+          message += ` File cleanup also failed: ${cleanupReason instanceof Error ? cleanupReason.message : "unknown error"}.`;
+        }
+      }
+      console.error("Hymn audio upload workflow failed.", {
+        storageUploaded,
+        message,
+      });
+      setError(message);
     } finally {
+      uploadingAudioRef.current = false;
       setUploadingAudio(false);
     }
   }
@@ -1460,6 +1541,7 @@ export default function CatalogueDashboard() {
               !uploadingAudio
             ) {
               setAudioUploadTarget(null);
+              setSelectedAudioFile(null);
               setError("");
             }
           }}
@@ -1481,6 +1563,7 @@ export default function CatalogueDashboard() {
                 disabled={uploadingAudio}
                 onClick={() => {
                   setAudioUploadTarget(null);
+                  setSelectedAudioFile(null);
                   setError("");
                 }}
               >
@@ -1506,16 +1589,19 @@ export default function CatalogueDashboard() {
                 ref={directAudioInput}
                 className="visually-hidden"
                 type="file"
-                accept=".mp3,.m4a,.mp4,.aac,.wav,.ogg,.flac,audio/*"
-                onChange={(event) =>
-                  void uploadRecording(event, audioUploadTarget)
-                }
+                accept=".mp3,audio/mpeg"
+                onChange={selectAudioFile}
                 aria-label={`Choose audio for ${audioUploadTarget.title}`}
               />
               <p className="field-hint">
-                MP3, M4A, AAC, WAV, OGG and FLAC files up to 100 MB are
-                supported.
+                MP3 files up to 100 MB are supported.
               </p>
+              {selectedAudioFile && (
+                <small className="field-hint">
+                  Selected: {selectedAudioFile.name} · {(selectedAudioFile.size / (1024 * 1024)).toFixed(2)} MB
+                  {selectedAudioFile.type ? ` · ${selectedAudioFile.type}` : " · MIME type not reported"}
+                </small>
+              )}
               {!supabase && (
                 <small className="field-hint">
                   Configure the Supabase URL and publishable key in
@@ -1546,11 +1632,26 @@ export default function CatalogueDashboard() {
               )}
               <button
                 className="button primary"
+                type="button"
+                disabled={
+                  uploadingAudio ||
+                  !selectedAudioFile ||
+                  !supabase ||
+                  !session ||
+                  isAdmin !== true
+                }
+                onClick={() => void uploadRecording(audioUploadTarget)}
+              >
+                <Icon name="upload" size={16} />
+                {uploadingAudio ? "Uploading audio…" : "Upload selected MP3"}
+              </button>
+              <button
+                className="button secondary"
+                type="button"
                 disabled={uploadingAudio}
                 onClick={() => requestAudioFile(directAudioInput.current)}
               >
-                <Icon name="upload" size={16} />
-                {uploadingAudio ? "Uploading audio…" : "Choose audio file"}
+                Choose audio file
               </button>
             </div>
           </section>
@@ -1594,7 +1695,7 @@ export default function CatalogueDashboard() {
                     <div className="recording-editor-heading">
                       <div>
                         <strong>Audio recordings</strong>
-                        <small className="field-hint">Upload an audio file and choose its recording style. MP3, M4A, AAC, WAV, OGG and FLAC are supported (100 MB maximum).</small>
+                        <small className="field-hint">Choose an MP3 and its recording style, then upload (100 MB maximum).</small>
                       </div>
                       <select
                         aria-label="Recording style"
@@ -1612,8 +1713,8 @@ export default function CatalogueDashboard() {
                       ref={audioInput}
                       className="visually-hidden"
                       type="file"
-                      accept=".mp3,.m4a,.mp4,.aac,.wav,.ogg,.flac,audio/*"
-                      onChange={(event) => void uploadRecording(event)}
+                      accept=".mp3,audio/mpeg"
+                      onChange={selectAudioFile}
                       aria-label="Choose hymn audio file"
                     />
                     <button
@@ -1623,8 +1724,23 @@ export default function CatalogueDashboard() {
                       onClick={() => requestAudioFile(audioInput.current)}
                     >
                       <Icon name="upload" size={16} />
-                      {uploadingAudio ? "Uploading audio…" : "Upload audio"}
+                      Choose MP3 file
                     </button>
+                    <button
+                      className="button primary"
+                      type="button"
+                      disabled={uploadingAudio || !selectedAudioFile}
+                      onClick={() => void uploadRecording()}
+                    >
+                      <Icon name="upload" size={16} />
+                      {uploadingAudio ? "Uploading audio…" : "Upload selected MP3"}
+                    </button>
+                    {selectedAudioFile && (
+                      <small className="field-hint">
+                        Selected: {selectedAudioFile.name} · {(selectedAudioFile.size / (1024 * 1024)).toFixed(2)} MB
+                        {selectedAudioFile.type ? ` · ${selectedAudioFile.type}` : " · MIME type not reported"}
+                      </small>
+                    )}
                     {!supabase && <small className="field-hint">Configure Supabase to upload audio files.</small>}
                     {supabase && !authReady && <small className="field-hint">Checking sign-in status…</small>}
                     {supabase && authReady && !session && <small className="field-hint">Sign in with an invited admin account to upload audio files.</small>}

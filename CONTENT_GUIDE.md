@@ -1,6 +1,6 @@
 # Adding Verified Hymn Content
 
-The bundled catalogue is `assets/catalogue.json`. It is deliberately empty until verified text and permissions are supplied. `assets/catalogue.sample.json` contains two clearly marked development-only examples and is not loaded by the app. Do not add unverified hymn words, numbering, recordings, or attribution. The app treats the JSON file as content, so adding hymns does not require editing a screen or model.
+The bundled catalogue is `assets/catalogue.json`. It is deliberately empty until verified text and permissions are supplied. `assets/catalogue.sample.json` contains two clearly marked development-only examples and is not loaded by the app. Do not add unverified hymn words, numbering, recordings, or attribution. The app treats the JSON file as content, so adding hymns does not require editing a screen or model.4
 
 ## Schema
 
@@ -52,7 +52,7 @@ Example structure (all values below are instructional placeholders, not hymn con
 
 ## Attach recordings
 
-Add one recording object for each available version. `type` must be `maleSolo`, `femaleSolo`, `choir`, `congregation`, or `instrumental`. Give each recording a globally unique stable ID. Set `url` to a public HTTPS audio file, and include duration, size, attribution, and permission metadata when known. For example, a female solo uses `"type": "femaleSolo"`; a choir uses `"type": "choir"`. Keep files on HTTPS static hosting with a direct audio-file URL and confirm streaming and download rights before publication.
+Add one recording object for each available version. `type` must be `maleSolo`, `femaleSolo`, `choir`, `congregation`, or `instrumental`. Give each recording a globally unique stable ID. Existing external recordings may use `url` with a public HTTPS audio file. Recordings uploy8aded by the admin dashboard use `storagePath` and are available only after an administrator publishes the catalogue; do not replace that field with a public URL. Include duration, size, attribution, and permission metadata when known, and confirm streaming and download rights before publication.
 
 The app streams from HTTPS and offers an individual download for each recording. Downloaded files are kept in the app's documents directory and take precedence during playback. Downloads are written to a temporary file, checked for a successful HTTP response and non-empty complete transfer, then renamed and recorded locally. Removing a download deletes only that app-owned file. Catalogue lyrics and user preferences remain available offline.
 

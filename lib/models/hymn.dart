@@ -21,6 +21,7 @@ class HymnRecording {
     required this.id,
     required this.type,
     this.url,
+    this.storagePath,
     this.durationSeconds,
     this.fileSizeBytes,
     this.attribution,
@@ -30,6 +31,7 @@ class HymnRecording {
   final String id;
   final RecordingType type;
   final String? url;
+  final String? storagePath;
   final int? durationSeconds;
   final int? fileSizeBytes;
   final String? attribution;
@@ -49,16 +51,37 @@ class HymnRecording {
         throw FormatException('Recording $id must use a valid HTTPS URL');
       }
     }
+    final storagePath = _optionalString(json, 'storagePath');
+    if (storagePath != null &&
+        (storagePath.trim().isEmpty ||
+            storagePath.startsWith('/') ||
+            storagePath
+                .split('/')
+                .any((part) => part.isEmpty || part == '.' || part == '..'))) {
+      throw FormatException('Recording $id has an invalid storage path');
+    }
     return HymnRecording(
       id: id,
       type: type.first,
       url: url,
+      storagePath: storagePath,
       durationSeconds: _optionalInt(json, 'durationSeconds'),
       fileSizeBytes: _optionalInt(json, 'fileSizeBytes'),
       attribution: _optionalString(json, 'attribution'),
       permission: _optionalString(json, 'permission'),
     );
   }
+
+  HymnRecording withPlaybackUrl(String playbackUrl) => HymnRecording(
+        id: id,
+        type: type,
+        url: playbackUrl,
+        storagePath: storagePath,
+        durationSeconds: durationSeconds,
+        fileSizeBytes: fileSizeBytes,
+        attribution: attribution,
+        permission: permission,
+      );
 
   static int? _optionalInt(Map<String, dynamic> json, String key) {
     final value = json[key];
@@ -102,6 +125,23 @@ class Hymn {
   final String? permission;
   final String? artwork;
   final List<HymnRecording> recordings;
+
+  Hymn withRecordings(List<HymnRecording> value) => Hymn(
+        id: id,
+        number: number,
+        title: title,
+        language: language,
+        stanzas: stanzas,
+        chorus: chorus,
+        author: author,
+        composer: composer,
+        source: source,
+        copyright: copyright,
+        attribution: attribution,
+        permission: permission,
+        artwork: artwork,
+        recordings: value,
+      );
 
   factory Hymn.fromJson(Map<String, dynamic> json) {
     final id = _requiredString(json, 'id');
